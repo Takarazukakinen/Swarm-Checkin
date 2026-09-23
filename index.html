@@ -30,36 +30,21 @@
       return textarea.value;
     }
 
-    // HTMLから場所名を抽出する処理
-    function extractPlaceName(html) {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
+    // テキストから不要な不要語を削除して場所名をきれいに成形する
+    function cleanPlaceName(text) {
+      if (!text) return "";
+      let cleaned = decodeEntities(text);
 
-      let rawTitle = "";
-
-      // 1. og:title または twitter:title から取得
-      const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-                      doc.querySelector('meta[name="twitter:title"]')?.getAttribute('content');
-
-      if (ogTitle) {
-        rawTitle = ogTitle;
-      } else {
-        // 2. なければ <title> タグから取得
-        const titleElem = doc.querySelector('title');
-        if (titleElem) rawTitle = titleElem.textContent;
-      }
-
-      if (!rawTitle) return "";
-
-      rawTitle = decodeEntities(rawTitle);
-
-      // 不要なPrefix/Suffixを削って「場所名 in 市区町村, 都道府県」の形式に整形
-      return rawTitle
-        .replace(/^.*?'s check in at\s*/i, '') // 「ごーと's check in at 」を消す
-        .replace(/^I'm at\s*/i, '')            // 「I'm at 」を重複防止で消す
-        .replace(/ - Swarm$/i, '')             // 「 - Swarm」を消す
-        .replace(/Swarm$/i, '')                // 「Swarm」を消す
+      // 「ごーと's check in at 荻窪駅」などのゴミを削除
+      cleaned = cleaned
+        .replace(/^.*?'s check in at\s*/i, '')
+        .replace(/^.*?'s checkin at\s*/i, '')
+        .replace(/^I'm at\s*/i, '')
+        .replace(/ - Swarm$/i, '')
+        .replace(/Swarm$/i, '')
         .trim();
+
+      return cleaned;
     }
 
     async function convertAndTweet() {
@@ -71,7 +56,7 @@
         return;
       }
 
-      status.innerText = "場所・住所情報を取得中...";
+      status.innerText = "場所情報を解析中...";
 
       // 旧URL形式へ変換
       let oldFormatUrl = inputUrl;
@@ -83,39 +68,56 @@
 
       let placeName = "";
 
-      // プロキシ1: AllOrigins
+      // ----------------------------------------------------
+      // アプローチ1: APIプロキシ1 (allorigins) で全取得を狙う
+      // ----------------------------------------------------
       try {
-        const proxyUrl1 = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
-        const res1 = await fetch(proxyUrl1);
-        const data1 = await res1.json();
-        if (data1 && data1.contents) {
-          placeName = extractPlaceName(data1.contents);
-        }
-      } catch (e) {
-        // エラー時はプロキシ2へフォールバック
-      }
+        const p1 = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+        const r1 = await fetch(p1);
+        const d1 = await r1.json();
+        if (d1 && d1.contents) {
+          const html = d1.contents;
+          // og:title (フル場所名) または title (最低限の場所名)
+          const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["'](.*?)["']/i);
+          const titleMatch = html.match(/<title>(.*?)<\/title>/i);
 
-      // プロキシ1で取れなかった場合、プロキシ2: CorsProxy を試す
+          if (ogMatch && ogMatch[1]) {
+            placeName = cleanPlaceName(ogMatch[1]);
+          } else if (titleMatch && titleMatch[1]) {
+            placeName = cleanPlaceName(titleMatch[1]);
+          }
+        }
+      } catch (e) {}
+
+      // ----------------------------------------------------
+      // アプローチ2: 取れなかったらAPIプロキシ2 (corsproxy.io) でリトライ
+      // ----------------------------------------------------
       if (!placeName) {
         try {
-          const proxyUrl2 = 'https://corsproxy.io/?' + encodeURIComponent(inputUrl);
-          const res2 = await fetch(proxyUrl2);
-          const html2 = await res2.text();
+          const p2 = 'https://corsproxy.io/?' + encodeURIComponent(inputUrl);
+          const r2 = await fetch(p2);
+          const html2 = await r2.text();
           if (html2) {
-            placeName = extractPlaceName(html2);
+            const ogMatch = html2.match(/<meta[^>]*property=["']og:title["'][^>]*content=["'](.*?)["']/i);
+            const titleMatch = html2.match(/<title>(.*?)<\/title>/i);
+
+            if (ogMatch && ogMatch[1]) {
+              placeName = cleanPlaceName(ogMatch[1]);
+            } else if (titleMatch && titleMatch[1]) {
+              placeName = cleanPlaceName(titleMatch[1]);
+            }
           }
-        } catch (e) {
-          // エラー時は取得失敗
-        }
+        } catch (e) {}
       }
 
-      // ツイート本文の作成
+      // ----------------------------------------------------
+      // ツイート作成＆Xアプリ起動
+      // ----------------------------------------------------
       const textPrefix = placeName ? `I'm at ${placeName}` : "I'm at";
       const tweetText = `${textPrefix}\n${oldFormatUrl}`;
 
       status.innerText = "";
 
-      // Xアプリ起動
       const appUrl = `twitter://post?text=${encodeURIComponent(tweetText)}`;
       const webUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
