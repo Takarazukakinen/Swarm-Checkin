@@ -14,18 +14,21 @@
 <body>
   <h3>Swarm チェックイン X投稿</h3>
   
-  <label>Swarm共有URL：</label>
+  <label>1. Swarm共有URL：</label>
   <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
 
-  <button onclick="convertAndTweet()">Xでツイートする</button>
+  <label>2. 場所名（自動取得失敗時のみ手動入力）：</label>
+  <input type="text" id="placeName" placeholder="麺屋33 in 千代田区, 東京都">
+
+  <button onclick="convertAndTweet()">Xアプリでツイートする</button>
   <div id="status"></div>
 
   <script>
-    // あなたのSwarmユーザーID（例: 58771976）
     const MY_USER_ID = "58771976";
 
     async function convertAndTweet() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
+      let manualPlace = document.getElementById('placeName').value.trim();
       const status = document.getElementById('status');
 
       if (!inputUrl) {
@@ -33,39 +36,54 @@
         return;
       }
 
-      status.innerText = "場所名を取得中...";
+      status.innerText = "処理中...";
 
-      // 1. foursquareの共有URLを swarmapp の旧形式URLに変換する
+      // 旧URL形式へ変換
       let oldFormatUrl = inputUrl;
       if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
         oldFormatUrl = inputUrl
           .replace('app.foursquare.com/share/checkin/', `ja.swarmapp.com/user/${MY_USER_ID}/checkin/`)
-          .replace('&lang=ja', ''); // 不要な言語パラメータを削除
+          .replace('&lang=ja', '');
       }
 
-      // 2. 外部プロキシ経由でページタイトル（場所名）を取得する
-      let placeName = "";
-      try {
-        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
-        const response = await fetch(proxyUrl);
-        const data = await response.json();
+      let placeName = manualPlace;
 
-        if (data.contents) {
-          const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
-          if (titleMatch && titleMatch[1]) {
-            placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
+      // 手動入力がない場合のみ自動取得をトライ
+      if (!placeName) {
+        try {
+          const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+          const response = await fetch(proxyUrl);
+          const data = await response.json();
+
+          if (data && data.contents) {
+            const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+              placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
+            }
           }
+        } catch (e) {
+          // 自動取得エラー時は何もしない（手動入力か空のまま進む）
         }
-      } catch (e) {
-        // 場所名が取得できなかった場合でもそのまま進む
       }
 
-      // 3. ツイート文面を組み立てる (旧形式URLを使用)
-      const tweetText = placeName ? `I'm at ${placeName}\n${oldFormatUrl}` : `I'm at\n${oldFormatUrl}`;
-      const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+      // ツイート本文生成
+      const textPrefix = placeName ? `I'm at ${placeName}` : "I'm at";
+      const tweetText = `${textPrefix}\n${oldFormatUrl}`;
 
       status.innerText = "";
-      window.location.href = shareUrl;
+
+      // X（Twitter）アプリを直接起動するURLスキーム
+      const appUrl = `twitter://post?text=${encodeURIComponent(tweetText)}`;
+      // Webブラウザ用のフォールバックURL
+      const webUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+
+      // アプリ起動を試みる
+      window.location.href = appUrl;
+
+      // 1秒経ってもアプリが開かない場合はWeb版を開く
+      setTimeout(() => {
+        window.location.href = webUrl;
+      }, 1000);
     }
   </script>
 </body>
