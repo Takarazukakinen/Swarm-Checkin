@@ -7,37 +7,65 @@
   <style>
     body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
     input { width: 100%; padding: 12px; box-sizing: border-box; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
-    .btn { display: block; width: 100%; padding: 14px; background: #1da1f2; color: white; text-align: center; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-sizing: border-box; }
+    button { width: 100%; padding: 14px; background: #1da1f2; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    #status { margin-top: 10px; font-size: 14px; color: #666; }
   </style>
 </head>
 <body>
   <h3>Swarm チェックイン X投稿</h3>
   
-  <label>1. Swarmの共有URL：</label>
-  <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/..." oninput="generateLink()">
+  <label>Swarm共有URL：</label>
+  <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
 
-  <label>2. 場所名・地名（任意）：</label>
-  <input type="text" id="placeName" placeholder="麺屋33 in 千代田区, 東京都" oninput="generateLink()">
-
-  <!-- 直接タップできるリンクにする -->
-  <a id="tweetBtn" class="btn" href="javascript:alert('URLを入力してください');">X（Twitter）でツイートする</a>
+  <button onclick="convertAndTweet()">Xでツイートする</button>
+  <div id="status"></div>
 
   <script>
-    function generateLink() {
+    // あなたのSwarmユーザーID（例: 58771976）
+    const MY_USER_ID = "58771976";
+
+    async function convertAndTweet() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
-      const placeName = document.getElementById('placeName').value.trim();
-      const tweetBtn = document.getElementById('tweetBtn');
+      const status = document.getElementById('status');
 
       if (!inputUrl) {
-        tweetBtn.href = "javascript:alert('SwarmのURLを入力してください');";
+        alert('URLを入力してください');
         return;
       }
 
-      const placeText = placeName ? `I'm at ${placeName}` : "I'm at";
-      const tweetText = `${placeText}\n${inputUrl}`;
-      
-      // ボタンのリンク先（href）をTwitterの投稿用URLに直接セットする
-      tweetBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+      status.innerText = "場所名を取得中...";
+
+      // 1. foursquareの共有URLを swarmapp の旧形式URLに変換する
+      let oldFormatUrl = inputUrl;
+      if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
+        oldFormatUrl = inputUrl
+          .replace('app.foursquare.com/share/checkin/', `ja.swarmapp.com/user/${MY_USER_ID}/checkin/`)
+          .replace('&lang=ja', ''); // 不要な言語パラメータを削除
+      }
+
+      // 2. 外部プロキシ経由でページタイトル（場所名）を取得する
+      let placeName = "";
+      try {
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+
+        if (data.contents) {
+          const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
+          if (titleMatch && titleMatch[1]) {
+            placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
+          }
+        }
+      } catch (e) {
+        // 場所名が取得できなかった場合でもそのまま進む
+      }
+
+      // 3. ツイート文面を組み立てる (旧形式URLを使用)
+      const tweetText = placeName ? `I'm at ${placeName}\n${oldFormatUrl}` : `I'm at\n${oldFormatUrl}`;
+      const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+
+      status.innerText = "";
+      window.location.href = shareUrl;
     }
   </script>
 </body>
