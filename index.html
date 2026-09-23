@@ -8,7 +8,7 @@
     body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
     input { width: 100%; padding: 12px; box-sizing: border-box; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
     button { width: 100%; padding: 14px; background: #1da1f2; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    #status { margin-top: 10px; font-size: 14px; color: #666; }
+    #status { margin-top: 10px; font-size: 14px; color: #007bff; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -17,11 +17,11 @@
   <label>Swarm共有URL：</label>
   <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
 
-  <button onclick="convertAndTweet()">Xでツイートする</button>
+  <button onclick="convertAndTweet()">場所を取得してXでツイート</button>
   <div id="status"></div>
 
   <script>
-    // あなたのSwarmユーザーID（例: 58771976）
+    // ユーザーIDの設定
     const MY_USER_ID = "58771976";
 
     async function convertAndTweet() {
@@ -33,18 +33,18 @@
         return;
       }
 
-      status.innerText = "場所名を取得中...";
+      status.innerText = "場所と地名を取得中...";
 
       // 1. foursquareの共有URLを swarmapp の旧形式URLに変換する
       let oldFormatUrl = inputUrl;
       if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
         oldFormatUrl = inputUrl
           .replace('app.foursquare.com/share/checkin/', `ja.swarmapp.com/user/${MY_USER_ID}/checkin/`)
-          .replace('&lang=ja', ''); // 不要な言語パラメータを削除
+          .replace('&lang=ja', '');
       }
 
-      // 2. 外部プロキシ経由でページタイトル（場所名）を取得する
-      let placeName = "";
+      // 2. プロキシ経由でページタイトル（場所名 in 市町村, 都道府県）を取得する
+      let placeDetail = "";
       try {
         const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
         const response = await fetch(proxyUrl);
@@ -53,18 +53,25 @@
         if (data.contents) {
           const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
           if (titleMatch && titleMatch[1]) {
-            placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
+            // 「gleeful in 柏市, 千葉県 - Swarm」から 「 - Swarm」を削る
+            placeDetail = titleMatch[1]
+              .replace(/\s*-\s*Swarm\s*$/i, '')
+              .replace(/^Swarm\s*/i, '')
+              .trim();
           }
         }
       } catch (e) {
-        // 場所名が取得できなかった場合でもそのまま進む
+        // エラー時は取得スキップ
       }
 
-      // 3. ツイート文面を組み立てる (旧形式URLを使用)
-      const tweetText = placeName ? `I'm at ${placeName}\n${oldFormatUrl}` : `I'm at\n${oldFormatUrl}`;
+      // 3. ツイート文面を組み立てる (I'm at 場所名 in 地名 旧URL)
+      const placeText = placeDetail ? `I'm at ${placeDetail}` : "I'm at";
+      const tweetText = `${placeText}\n${oldFormatUrl}`;
       const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
       status.innerText = "";
+      
+      // X（Twitter）投稿画面を開く
       window.location.href = shareUrl;
     }
   </script>
