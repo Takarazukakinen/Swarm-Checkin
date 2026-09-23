@@ -8,7 +8,7 @@
     body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
     input { width: 100%; padding: 12px; box-sizing: border-box; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
     button { width: 100%; padding: 14px; background: #1da1f2; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    #status { margin-top: 10px; font-size: 14px; color: #007bff; font-weight: bold; }
+    #status { margin-top: 10px; font-size: 14px; color: #666; }
   </style>
 </head>
 <body>
@@ -17,17 +17,12 @@
   <label>Swarm共有URL：</label>
   <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
 
-  <button onclick="convertAndTweet()">場所を取得してXでツイート</button>
+  <button onclick="convertAndTweet()">Xでツイートする</button>
   <div id="status"></div>
 
   <script>
+    // あなたのSwarmユーザーID（例: 58771976）
     const MY_USER_ID = "58771976";
-
-    function decodeHtmlEntity(str) {
-      const txt = document.createElement('textarea');
-      txt.innerHTML = str;
-      return txt.value;
-    }
 
     async function convertAndTweet() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
@@ -38,80 +33,35 @@
         return;
       }
 
-      status.innerText = "場所と地名を取得中...";
+      status.innerText = "場所名を取得中...";
 
-      // 1. URLの旧形式変換
+      // 1. foursquareの共有URLを swarmapp の旧形式URLに変換する
       let oldFormatUrl = inputUrl;
       if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
         oldFormatUrl = inputUrl
           .replace('app.foursquare.com/share/checkin/', `ja.swarmapp.com/user/${MY_USER_ID}/checkin/`)
-          .replace('&lang=ja', '');
+          .replace('&lang=ja', ''); // 不要な言語パラメータを削除
       }
 
-      // 2. 日本語指定（&lang=ja）でプロキシ取得
-      let placeDetail = "";
+      // 2. 外部プロキシ経由でページタイトル（場所名）を取得する
+      let placeName = "";
       try {
-        const fetchTargetUrl = inputUrl.includes('?') ? `${inputUrl}&lang=ja` : `${inputUrl}?lang=ja`;
-        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(fetchTargetUrl);
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
         const response = await fetch(proxyUrl);
         const data = await response.json();
 
         if (data.contents) {
-          const html = data.contents;
-
-          // A. og:title または og:description から地名入り情報を取得試行
-          const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["'](.*?)["']/i) ||
-                              html.match(/<meta\s+name=["']description["']\s+content=["'](.*?)["']/i);
-          
-          const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-
-          let rawText = "";
+          const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
           if (titleMatch && titleMatch[1]) {
-            rawText = decodeHtmlEntity(titleMatch[1]);
-          }
-
-          // 「〇〇's check in at 場所名」から場所名を特定
-          let spotName = rawText;
-          if (rawText.includes("'s check in at ")) {
-            spotName = rawText.split("'s check in at ")[1].replace(/\s*-\s*Swarm\s*$/i, '').trim();
-          } else if (rawText.includes("’s check in at ")) {
-            spotName = rawText.split("’s check in at ")[1].replace(/\s*-\s*Swarm\s*$/i, '').trim();
-          } else {
-            spotName = rawText.replace(/\s*-\s*Swarm\s*$/i, '').replace(/^Swarm\s*/i, '').trim();
-          }
-
-          // B. ページ内に「in 市区町村, 都道府県」や住所が含まれているか判定
-          let locationSuffix = "";
-          
-          // og:description や 本文から 「in 〇〇区, 東京都」 などのパターンを探す
-          const inMatch = html.match(/in\s+([^\x00-\x7F]+\s*,\s*[^\x00-\x7F]+)/i) || 
-                          html.match(/in\s+([^\x00-\x7F]+(?:区|市|町|村|郡)\s*,\s*[^\x00-\x7F]+(?:都|道|府|県))/i);
-
-          if (inMatch && inMatch[1]) {
-            locationSuffix = ` in ${inMatch[1].trim()}`;
-          } else if (ogDescMatch && ogDescMatch[1]) {
-            // descriptionに住所が含まれていれば抽出
-            const desc = decodeHtmlEntity(ogDescMatch[1]);
-            const locMatch = desc.match(/([^\x00-\x7F]+(?:区|市|町|村)\s*,\s*[^\x00-\x7F]+(?:都|道|府|県))/);
-            if (locMatch && locMatch[1]) {
-              locationSuffix = ` in ${locMatch[1].trim()}`;
-            }
-          }
-
-          // すでに spotName に "in " が入っていなければ結合
-          if (spotName.includes(" in ")) {
-            placeDetail = spotName;
-          } else {
-            placeDetail = spotName + locationSuffix;
+            placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
           }
         }
       } catch (e) {
-        // エラー時はフォールバック
+        // 場所名が取得できなかった場合でもそのまま進む
       }
 
-      // 3. ツイート文面作成
-      const placeText = placeDetail ? `I'm at ${placeDetail}` : "I'm at";
-      const tweetText = `${placeText}\n${oldFormatUrl}`;
+      // 3. ツイート文面を組み立てる (旧形式URLを使用)
+      const tweetText = placeName ? `I'm at ${placeName}\n${oldFormatUrl}` : `I'm at\n${oldFormatUrl}`;
       const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
       status.innerText = "";
