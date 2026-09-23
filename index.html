@@ -21,10 +21,8 @@
   <div id="status"></div>
 
   <script>
-    // ユーザーIDの設定
     const MY_USER_ID = "58771976";
 
-    // HTML特殊文字（&#39; や &amp; など）を普通の文字に変換する関数
     function decodeHtmlEntity(str) {
       const txt = document.createElement('textarea');
       txt.innerHTML = str;
@@ -42,7 +40,7 @@
 
       status.innerText = "場所と地名を取得中...";
 
-      // 1. foursquareの共有URLを swarmapp の旧形式URLに変換する
+      // 1. URLの旧形式変換
       let oldFormatUrl = inputUrl;
       if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
         oldFormatUrl = inputUrl
@@ -50,44 +48,73 @@
           .replace('&lang=ja', '');
       }
 
-      // 2. プロキシ経由でページタイトルを取得して整形する
+      // 2. 日本語指定（&lang=ja）でプロキシ取得
       let placeDetail = "";
       try {
-        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+        const fetchTargetUrl = inputUrl.includes('?') ? `${inputUrl}&lang=ja` : `${inputUrl}?lang=ja`;
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(fetchTargetUrl);
         const response = await fetch(proxyUrl);
         const data = await response.json();
 
         if (data.contents) {
-          const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
+          const html = data.contents;
+
+          // A. og:title または og:description から地名入り情報を取得試行
+          const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["'](.*?)["']/i) ||
+                              html.match(/<meta\s+name=["']description["']\s+content=["'](.*?)["']/i);
+          
+          const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+
+          let rawText = "";
           if (titleMatch && titleMatch[1]) {
-            // HTMLエンティティ（&#39;等）をデコード
-            let rawTitle = decodeHtmlEntity(titleMatch[1]);
+            rawText = decodeHtmlEntity(titleMatch[1]);
+          }
 
-            // 末尾の「 - Swarm」を削除
-            rawTitle = rawTitle.replace(/\s*-\s*Swarm\s*$/i, '');
+          // 「〇〇's check in at 場所名」から場所名を特定
+          let spotName = rawText;
+          if (rawText.includes("'s check in at ")) {
+            spotName = rawText.split("'s check in at ")[1].replace(/\s*-\s*Swarm\s*$/i, '').trim();
+          } else if (rawText.includes("’s check in at ")) {
+            spotName = rawText.split("’s check in at ")[1].replace(/\s*-\s*Swarm\s*$/i, '').trim();
+          } else {
+            spotName = rawText.replace(/\s*-\s*Swarm\s*$/i, '').replace(/^Swarm\s*/i, '').trim();
+          }
 
-            // 「〇〇's check in at 場所名」のパターンがあれば、場所名以降だけを抽出
-            if (rawTitle.includes("'s check in at ")) {
-              placeDetail = rawTitle.split("'s check in at ")[1].trim();
-            } else if (rawTitle.includes("’s check in at ")) {
-              placeDetail = rawTitle.split("’s check in at ")[1].trim();
-            } else {
-              placeDetail = rawTitle.trim();
+          // B. ページ内に「in 市区町村, 都道府県」や住所が含まれているか判定
+          let locationSuffix = "";
+          
+          // og:description や 本文から 「in 〇〇区, 東京都」 などのパターンを探す
+          const inMatch = html.match(/in\s+([^\x00-\x7F]+\s*,\s*[^\x00-\x7F]+)/i) || 
+                          html.match(/in\s+([^\x00-\x7F]+(?:区|市|町|村|郡)\s*,\s*[^\x00-\x7F]+(?:都|道|府|県))/i);
+
+          if (inMatch && inMatch[1]) {
+            locationSuffix = ` in ${inMatch[1].trim()}`;
+          } else if (ogDescMatch && ogDescMatch[1]) {
+            // descriptionに住所が含まれていれば抽出
+            const desc = decodeHtmlEntity(ogDescMatch[1]);
+            const locMatch = desc.match(/([^\x00-\x7F]+(?:区|市|町|村)\s*,\s*[^\x00-\x7F]+(?:都|道|府|県))/);
+            if (locMatch && locMatch[1]) {
+              locationSuffix = ` in ${locMatch[1].trim()}`;
             }
+          }
+
+          // すでに spotName に "in " が入っていなければ結合
+          if (spotName.includes(" in ")) {
+            placeDetail = spotName;
+          } else {
+            placeDetail = spotName + locationSuffix;
           }
         }
       } catch (e) {
-        // エラー時は処理をスキップ
+        // エラー時はフォールバック
       }
 
-      // 3. ツイート文面を組み立てる (I'm at 場所名 in 地名 旧URL)
+      // 3. ツイート文面作成
       const placeText = placeDetail ? `I'm at ${placeDetail}` : "I'm at";
       const tweetText = `${placeText}\n${oldFormatUrl}`;
       const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
       status.innerText = "";
-      
-      // X（Twitter）投稿画面を開く
       window.location.href = shareUrl;
     }
   </script>
