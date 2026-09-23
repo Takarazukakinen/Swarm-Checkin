@@ -1,1 +1,109 @@
-I'm at ja" http-equiv="Content-
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swarm Check-in for X</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
+    input { width: 100%; padding: 12px; box-sizing: border-box; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
+    button { width: 100%; padding: 14px; background: #1da1f2; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    #status { margin-top: 10px; font-size: 14px; color: #666; }
+  </style>
+</head>
+<body>
+  <h3>Swarm チェックイン X投稿</h3>
+  
+  <label>Swarm共有URL：</label>
+  <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
+
+  <button onclick="convertAndTweet()">Xアプリでツイートする</button>
+  <div id="status"></div>
+
+  <script>
+    const MY_USER_ID = "58771976";
+
+    // 特殊文字（&#39; など）を普通の文字に変換する関数
+    function decodeEntities(encodedString) {
+      const textarea = document.createElement('textarea');
+      textarea.innerHTML = encodedString;
+      return textarea.value;
+    }
+
+    async function convertAndTweet() {
+      const inputUrl = document.getElementById('swarmUrl').value.trim();
+      const status = document.getElementById('status');
+
+      if (!inputUrl) {
+        alert('URLを入力してください');
+        return;
+      }
+
+      status.innerText = "場所名を取得中...";
+
+      // 旧URL形式へ変換
+      let oldFormatUrl = inputUrl;
+      if (inputUrl.includes('app.foursquare.com/share/checkin/')) {
+        oldFormatUrl = inputUrl
+          .replace('app.foursquare.com/share/checkin/', `ja.swarmapp.com/user/${MY_USER_ID}/checkin/`)
+          .replace('&lang=ja', '');
+      }
+
+      let placeName = "";
+
+      try {
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+
+        if (data && data.contents) {
+          const html = data.contents;
+
+          // DOMParserを使って安全にHTMLを解析する（CORS回避後の完全解析）
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+
+          // og:title メタタグを取得
+          const ogTitleMeta = doc.querySelector('meta[property="og:title"]');
+          if (ogTitleMeta && ogTitleMeta.getAttribute('content')) {
+            placeName = ogTitleMeta.getAttribute('content');
+          } else {
+            // og:title が無い場合は title タグから取得
+            const titleElem = doc.querySelector('title');
+            if (titleElem && titleElem.textContent) {
+              placeName = titleElem.textContent;
+            }
+          }
+
+          // 「〇〇's check in at 」や「 - Swarm」などの不要な文章をキレイに削除
+          if (placeName) {
+            placeName = decodeEntities(placeName);
+            placeName = placeName
+              .replace(/^.*?'s check in at\s*/i, '') // 「ごーと's check in at 」を削る
+              .replace(/ - Swarm$/i, '')
+              .replace(/Swarm$/i, '')
+              .trim();
+          }
+        }
+      } catch (e) {
+        // エラー時は何もしない
+      }
+
+      // ツイート本文生成
+      const textPrefix = placeName ? `I'm at ${placeName}` : "I'm at";
+      const tweetText = `${textPrefix}\n${oldFormatUrl}`;
+
+      status.innerText = "";
+
+      // X（Twitter）アプリ起動
+      const appUrl = `twitter://post?text=${encodeURIComponent(tweetText)}`;
+      const webUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+
+      window.location.href = appUrl;
+      setTimeout(() => {
+        window.location.href = webUrl;
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
