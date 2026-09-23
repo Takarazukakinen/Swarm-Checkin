@@ -14,11 +14,8 @@
 <body>
   <h3>Swarm チェックイン X投稿</h3>
   
-  <label>1. Swarm共有URL：</label>
+  <label>Swarm共有URL：</label>
   <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/...">
-
-  <label>2. 場所名（自動取得失敗時のみ手動入力）：</label>
-  <input type="text" id="placeName" placeholder="場所名 in 市区町村, 都道府県">
 
   <button onclick="convertAndTweet()">Xアプリでツイートする</button>
   <div id="status"></div>
@@ -28,7 +25,6 @@
 
     async function convertAndTweet() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
-      let manualPlace = document.getElementById('placeName').value.trim();
       const status = document.getElementById('status');
 
       if (!inputUrl) {
@@ -36,7 +32,7 @@
         return;
       }
 
-      status.innerText = "処理中...";
+      status.innerText = "場所名を取得中...";
 
       // 旧URL形式へ変換
       let oldFormatUrl = inputUrl;
@@ -46,24 +42,36 @@
           .replace('&lang=ja', '');
       }
 
-      let placeName = manualPlace;
+      let placeName = "";
 
-      // 手動入力がない場合のみ自動取得をトライ
-      if (!placeName) {
-        try {
-          const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
-          const response = await fetch(proxyUrl);
-          const data = await response.json();
+      try {
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
 
-          if (data && data.contents) {
-            const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
+        if (data && data.contents) {
+          const html = data.contents;
+
+          // 1. まず og:title から「場所名 in エリア」を優先抽出する
+          const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["'](.*?)["']/i) ||
+                               html.match(/<meta[^>]*content=["'](.*?)["'][^>]*property=["']og:title["']/i);
+
+          if (ogTitleMatch && ogTitleMatch[1]) {
+            placeName = ogTitleMatch[1];
+          } else {
+            // 2. og:title が無い場合は title タグから抽出して余計な文言（〇〇's check in at）を削る
+            const titleMatch = html.match(/<title>(.*?)<\/title>/i);
             if (titleMatch && titleMatch[1]) {
-              placeName = titleMatch[1].replace(' - Swarm', '').replace('Swarm', '').trim();
+              placeName = titleMatch[1]
+                .replace(/^.*?'s check in at\s*/i, '') // 「ごーと's check in at 」を削除
+                .replace(/ - Swarm$/i, '')
+                .replace(/Swarm$/i, '')
+                .trim();
             }
           }
-        } catch (e) {
-          // 自動取得エラー時は何もしない（手動入力か空のまま進む）
         }
+      } catch (e) {
+        // エラー時は取得スキップ
       }
 
       // ツイート本文生成
@@ -72,15 +80,11 @@
 
       status.innerText = "";
 
-      // X（Twitter）アプリを直接起動するURLスキーム
+      // X（Twitter）アプリ起動
       const appUrl = `twitter://post?text=${encodeURIComponent(tweetText)}`;
-      // Webブラウザ用のフォールバックURL
       const webUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
-      // アプリ起動を試みる
       window.location.href = appUrl;
-
-      // 1秒経ってもアプリが開かない場合はWeb版を開く
       setTimeout(() => {
         window.location.href = webUrl;
       }, 1000);
