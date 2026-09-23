@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swarm Check-in for X</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
+    input { width: 100%; padding: 12px; box-sizing: border-box; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
+    .btn { display: block; width: 100%; padding: 14px; background: #1da1f2; color: white; text-align: center; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <h3>Swarm チェックイン X投稿</h3>
+  
+  <label>1. Swarmの共有URL：</label>
+  <input type="text" id="swarmUrl" placeholder="https://app.foursquare.com/share/checkin/..." oninput="generateLink()">
+
+  <label>2. 場所名・地名（任意）：</label>
+  <input type="text" id="placeName" placeholder="麺屋33 in 千代田区, 東京都" oninput="generateLink()">
+
+  <!-- 直接タップできるリンクにする -->
+  <a id="tweetBtn" class="btn" href="javascript:alert('URLを入力してください');">X（Twitter）でツイートする</a>
+
+  <script>
+    function generateLink() {
+      const inputUrl = document.getElementById('swarmUrl').value.trim();
+      const placeName = document.getElementById('placeName').value.trim();
+      const tweetBtn = document.getElementById('tweetBtn');
+
+      if (!inputUrl) {
+        tweetBtn.href = "javascript:alert('SwarmのURLを入力してください');";
+        return;
+      }
+
+      const placeText = placeName ? `I'm at ${placeName}` : "I'm at";
+      const tweetText = `${placeText}\n${inputUrl}`;
+      
+      // ボタンのリンク先（href）をTwitterの投稿用URLに直接セットする
+      tweetBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    }
+  </script>
+</body>
+</html>
