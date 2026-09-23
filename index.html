@@ -24,6 +24,13 @@
     // ユーザーIDの設定
     const MY_USER_ID = "58771976";
 
+    // HTML特殊文字（&#39; や &amp; など）を普通の文字に変換する関数
+    function decodeHtmlEntity(str) {
+      const txt = document.createElement('textarea');
+      txt.innerHTML = str;
+      return txt.value;
+    }
+
     async function convertAndTweet() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
       const status = document.getElementById('status');
@@ -43,7 +50,7 @@
           .replace('&lang=ja', '');
       }
 
-      // 2. プロキシ経由でページタイトル（場所名 in 市町村, 都道府県）を取得する
+      // 2. プロキシ経由でページタイトルを取得して整形する
       let placeDetail = "";
       try {
         const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(inputUrl);
@@ -53,15 +60,24 @@
         if (data.contents) {
           const titleMatch = data.contents.match(/<title>(.*?)<\/title>/i);
           if (titleMatch && titleMatch[1]) {
-            // 「gleeful in 柏市, 千葉県 - Swarm」から 「 - Swarm」を削る
-            placeDetail = titleMatch[1]
-              .replace(/\s*-\s*Swarm\s*$/i, '')
-              .replace(/^Swarm\s*/i, '')
-              .trim();
+            // HTMLエンティティ（&#39;等）をデコード
+            let rawTitle = decodeHtmlEntity(titleMatch[1]);
+
+            // 末尾の「 - Swarm」を削除
+            rawTitle = rawTitle.replace(/\s*-\s*Swarm\s*$/i, '');
+
+            // 「〇〇's check in at 場所名」のパターンがあれば、場所名以降だけを抽出
+            if (rawTitle.includes("'s check in at ")) {
+              placeDetail = rawTitle.split("'s check in at ")[1].trim();
+            } else if (rawTitle.includes("’s check in at ")) {
+              placeDetail = rawTitle.split("’s check in at ")[1].trim();
+            } else {
+              placeDetail = rawTitle.trim();
+            }
           }
         }
       } catch (e) {
-        // エラー時は取得スキップ
+        // エラー時は処理をスキップ
       }
 
       // 3. ツイート文面を組み立てる (I'm at 場所名 in 地名 旧URL)
