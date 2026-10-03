@@ -88,26 +88,6 @@
       return tweetText;
     }
 
-    function extractTitleFromHtml(html) {
-      if (!html) return "";
-
-      const ogMatches = [
-        /<meta[^>]*property=["']og:title["'][^>]*content=["'](.*?)["']/i,
-        /<meta[^>]*content=["'](.*?)["'][^>]*property=["']og:title["']/i,
-        /<meta[^>]*name=["']twitter:title["'][^>]*content=["'](.*?)["']/i
-      ];
-
-      for (let re of ogMatches) {
-        const m = html.match(re);
-        if (m && m[1]) return m[1];
-      }
-
-      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-      if (titleMatch && titleMatch[1]) return titleMatch[1];
-
-      return "";
-    }
-
     async function parseLocation() {
       const inputUrl = document.getElementById('swarmUrl').value.trim();
       const status = document.getElementById('status');
@@ -120,38 +100,33 @@
 
       status.innerText = "場所情報を解析中...";
 
-      // 入力URLではなく、変換後のswarmapp.comのURLをターゲットにする
       const targetUrl = getOldFormatUrl(inputUrl);
-
-      const proxies = [
-        url => 'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
-        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
-        url => 'https://thingproxy.freeboard.io/fetch/' + url,
-        url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
-      ];
-
       let extractedName = "";
 
-      for (let i = 0; i < proxies.length; i++) {
-        try {
-          const proxyTarget = proxies[i](targetUrl);
-          const res = await fetch(proxyTarget);
-          let html = "";
-
-          if (i === 0) {
-            const data = await res.json();
-            html = data.contents || "";
-          } else {
-            html = await res.text();
+      // 方法1: Microlink OGP API (リダイレクト・Cloudflare回避に非常に強い)
+      try {
+        const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(targetUrl)}`);
+        const data = await res.json();
+        if (data && data.status === 'success' && data.data) {
+          const title = data.data.title || (data.data.publisher ? data.data.publisher : "");
+          if (title) {
+            extractedName = cleanPlaceName(title);
           }
+        }
+      } catch (e) {
+        console.warn("Microlink API failed", e);
+      }
 
-          const rawTitle = extractTitleFromHtml(html);
-          if (rawTitle) {
-            extractedName = cleanPlaceName(rawTitle);
-            if (extractedName) break;
+      // 方法2: Microlinkで失敗した場合、入力元のapp.foursquare.com URLで直接リトライ
+      if (!extractedName) {
+        try {
+          const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(inputUrl)}`);
+          const data = await res.json();
+          if (data && data.status === 'success' && data.data && data.data.title) {
+            extractedName = cleanPlaceName(data.data.title);
           }
         } catch (e) {
-          console.warn(`Proxy ${i + 1} failed`, e);
+          console.warn("Microlink fallback failed", e);
         }
       }
 
